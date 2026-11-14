@@ -1,0 +1,8 @@
+{
+  "appId": "dev.outpost.mail",
+  "appName": "Outpost",
+  "webDir": "app",
+  "backgroundColor": "#121211",
+  "android": { "allowMixedContent": false },
+  "plugins": { "CapacitorHttp": { "enabled": true } }
+}
