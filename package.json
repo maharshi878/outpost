@@ -4,7 +4,29 @@
   "description": "A local-only mail app for your own Resend API key. Desktop and Android.",
   "main": "main.js",
   "license": "MIT",
-  "author": "Outpost contributors",
+  "author": "Maharshi Patel",
+  "homepage": "https://github.com/maharshi878/outpost#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maharshi878/outpost.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maharshi878/outpost/issues"
+  },
+  "keywords": [
+    "resend",
+    "email",
+    "mail",
+    "electron",
+    "capacitor",
+    "android",
+    "byok",
+    "local-first",
+    "privacy"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
@@ -22,9 +44,27 @@
   "build": {
     "appId": "dev.outpost.mail",
     "productName": "Outpost",
-    "files": ["main.js", "preload.js", "app/**"],
-    "mac": { "category": "public.app-category.productivity", "target": ["dmg"] },
-    "win": { "target": ["nsis"] },
-    "linux": { "target": ["AppImage"], "category": "Office" }
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
+    }
   }
 }
