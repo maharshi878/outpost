@@ -10,24 +10,44 @@
     const save = () => env.save(db);
 
     // The only network code. Resend allows 2 requests per second, so calls are spaced out.
-    async function call(method, url, body, key) {
+    // 429 is retried after the wait Resend asks for, unless it is a daily or monthly quota (waiting will not help).
+    // GETs and sends that carry an Idempotency-Key are also retried on network errors and 5xx, so a flaky
+    // connection can never produce a duplicate email.
+    async function call(method, url, body, key, extra) {
       key = key || await env.getKey();
-      for (let i = 0; i < 4; i++) {
+      const safe = method === 'GET' || !!(extra && extra['Idempotency-Key']);
+      for (let i = 0; i < 5; i++) {
         const w = last + 550 - Date.now(); last = Date.now() + Math.max(w, 0); if (w > 0) await sleep(w);
         let res;
         try {
           res = await env.fetch('https://api.resend.com' + url, {
             method,
-            headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'outpost/0.2' },
+            headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'outpost/0.2', ...(extra || {}) },
             body: body ? JSON.stringify(body) : undefined
           });
-        } catch (e) { return { ok: false, status: 0, error: 'Could not reach Resend. Check your connection.' }; }
-        if (res.status === 429) { await sleep((+res.headers.get('retry-after') || 1) * 1000); continue; }
+        } catch (e) {
+          if (safe && i < 3) { await sleep(900 * (i + 1)); continue; }
+          return { ok: false, status: 0, error: 'Could not reach Resend. Check your connection.' };
+        }
+        if (res.status >= 500 && safe && i < 3) { await sleep(900 * (i + 1)); continue; }
         const data = await res.json().catch(() => ({}));
+        if (res.status === 429) {
+          if (/quota/i.test(data.name || '')) return { ok: false, status: 429, data, quota: true, error: data.message || 'Resend quota reached.' };
+          await sleep(Math.min(30, +res.headers.get('retry-after') || 1) * 1000); continue;
+        }
         return { ok: res.ok, status: res.status, data, error: res.ok ? null : (data.message || 'Request failed (' + res.status + ')') };
       }
       return { ok: false, status: 429, error: 'Resend is rate limiting requests. Try again shortly.' };
     }
+
+    // Sending limits, counted from what Resend recorded for this key (UTC days and months, like the meters).
+    const limits = () => ({ day: +db.settings.dayLimit || 100, mon: +db.settings.monLimit || 3000 });
+    function used() {
+      const n = new Date().toISOString(), d = n.slice(0, 10), m = n.slice(0, 7); let day = 0, mon = 0;
+      for (const e of Object.values(db.sent)) { const t = new Date(String(e.created_at).replace(' ', 'T').replace(/\+00$/, 'Z')); if (isNaN(t)) continue; const i = t.toISOString(); if (i.startsWith(d)) day++; if (i.startsWith(m)) mon++; }
+      return { day, mon };
+    }
+    const uuid = () => (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2);
 
     async function syncBox(kind, url) {
       let after = null;
@@ -56,8 +76,8 @@
           if (r.data && r.data.name === 'restricted_api_key') mode = 'send-only';
           else return { ok: false, error: r.status === 0 ? r.error : 'Resend rejected that key. Check it and try again.' };
         }
-        await env.setKey(key); db.mode = mode; await save();
-        return { ok: true, mode };
+        const level = await env.setKey(key); db.mode = mode; await save();
+        return { ok: true, mode, level };
       },
       async sync() {
         if (!(await env.getKey())) return { ok: false, error: 'No API key saved.' };
@@ -82,7 +102,14 @@
         await save(); return { ok: true, mail: { ...o } };
       },
       async send(m) {
-        const r = await call('POST', '/emails', m);
+        const { force, ...msg } = m || {};
+        if (!force) {
+          const u = used(), l = limits();
+          if (u.day >= l.day) return { ok: false, limit: 'day', error: `You have already sent ${u.day} of ${l.day} messages today (UTC). Resend may reject more.` };
+          if (u.mon >= l.mon) return { ok: false, limit: 'month', error: `You have already sent ${u.mon} of ${l.mon} messages this month. Resend may reject more.` };
+        }
+        m = msg;
+        const r = await call('POST', '/emails', m, null, { 'Idempotency-Key': uuid() });
         if (!r.ok) return { ok: false, error: r.error };
         db.sent[r.data.id] = { id: r.data.id, from: m.from, to: m.to, cc: m.cc || [], bcc: m.bcc || [], subject: m.subject,
           html: m.html, text: m.text, created_at: new Date().toISOString(), last_event: 'sent' };
@@ -91,6 +118,8 @@
       async draftSave(d) { const i = db.drafts.findIndex(x => x.id === d.id); d.updated = Date.now(); if (i < 0) db.drafts.unshift(d); else db.drafts[i] = d; await save(); },
       async draftDel(id) { db.drafts = db.drafts.filter(x => x.id !== id); await save(); },
       async settings(s) { db.settings = { ...db.settings, ...s }; await save(); },
+      async vault() { return env.vault ? env.vault() : { level: 'unknown', where: null, has: !!(await env.getKey()) }; },
+      async keyDel() { await env.delKey(); db.mode = 'full'; await save(); return { ok: true }; },
       async signout() { await env.delKey(); db = blank(); await save(); },
       pick() { return env.pick(); },
       ext(u) { if (/^(https:\/\/|mailto:)/.test(String(u))) env.ext(u); }

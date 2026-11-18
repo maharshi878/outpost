@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog, session, nativeTheme } = require('electron');
 const fs = require('fs'), path = require('path');
+const { pathToFileURL } = require('url');
 const createCore = require('./app/core.js');
+const createVault = require('./vault.js');
 
 const P = n => path.join(app.getPath('userData'), n);
 const rd = (n, d) => { try { return JSON.parse(fs.readFileSync(P(n), 'utf8')); } catch { return d; } };
@@ -8,19 +10,15 @@ const wr = (n, v, mode = 0o644) => { const t = P(n) + '.tmp'; fs.writeFileSync(t
 
 // All mail logic lives in app/core.js and is shared with the Android build.
 // This file only supplies the desktop pieces: storage, keychain, file picker.
+const vault = createVault({ safeStorage, fs, file: P('key.json') });
 const core = createCore({
   fetch: (...a) => fetch(...a),
   load: async () => rd('mail.json', null),
   save: async db => wr('mail.json', db, 0o600),
-  getKey: async () => {
-    const k = rd('key.json', null); if (!k) return null;
-    try { return k.enc ? safeStorage.decryptString(Buffer.from(k.d, 'base64')) : k.d; } catch { return null; }
-  },
-  setKey: async v => {
-    const enc = safeStorage.isEncryptionAvailable();
-    wr('key.json', { enc, d: enc ? safeStorage.encryptString(v).toString('base64') : v }, 0o600);
-  },
-  delKey: async () => { try { fs.unlinkSync(P('key.json')); } catch {} },
+  getKey: async () => vault.get(),
+  setKey: async v => vault.set(v),
+  delKey: async () => vault.remove(),
+  vault: async () => vault.status(),
   pick: async () => {
     const r = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     if (r.canceled) return [];
@@ -28,13 +26,19 @@ const core = createCore({
   },
   ext: u => shell.openExternal(u)
 });
-ipcMain.handle('core', (_, c, a) => core(c, a));
+const APP_URL = pathToFileURL(path.join(__dirname, 'app', 'index.html')).href;
+// Only the app's own top-level page may talk to the core. Iframes and anything else are refused.
+ipcMain.handle('core', (e, c, a) => {
+  const f = e.senderFrame;
+  if (!f || f.parent || !String(f.url).startsWith(APP_URL)) throw new Error('blocked');
+  return core(c, a);
+});
 
 function createWindow() {
   const w = new BrowserWindow({
     width: 1320, height: 840, minWidth: 940, minHeight: 580, title: 'Outpost', autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#121211' : '#e9ebee',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: !app.isPackaged }
   });
   w.loadFile(path.join(__dirname, 'app', 'index.html'));
   w.webContents.setWindowOpenHandler(({ url }) => { if (/^(https:\/\/|mailto:)/.test(url)) shell.openExternal(url); return { action: 'deny' }; });

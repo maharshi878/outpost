@@ -143,3 +143,12 @@ kbd{font:500 11px var(--sans);color:var(--mu);border:1px solid var(--ln);border-
 .dlg{margin:auto 0 0;width:100%;max-width:none;border-radius:26px 26px 0 0;animation:sheet .42s cubic-bezier(.32,.72,0,1);padding-bottom:calc(26px + var(--sab))}
 .solo{grid-template-columns:1fr}.hero{padding:calc(40px + var(--sat)) 24px 8px}.hero h1{font-size:50px}.kc{padding:20px 16px calc(28px + var(--sab))}.card{padding:24px}
 }
+
+/* key and limits */
+.dlg .row3{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sec{margin-top:22px;padding:16px;border-radius:18px;background:var(--pn)}
+.sec h3{font-size:22px;margin:0 0 6px;font-weight:400}
+.vl{margin:0 0 8px;font-size:13.5px;display:flex;gap:8px;align-items:center}.vl:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--mu);flex:none}
+.vl.ok:before{background:var(--ok)}.vl.wn:before{background:var(--wn)}
+.facts{margin:0;padding-left:18px;color:var(--mu);font-size:12.5px;line-height:1.7}
+.pill.bad{color:var(--bad)}

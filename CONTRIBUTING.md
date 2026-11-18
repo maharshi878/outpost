@@ -13,7 +13,9 @@ Changes that break these will not be merged.
 
 ## Layout
 
-    main.js, preload.js   Electron main process and bridge (storage, keychain, file picker)
+    main.js, preload.js   Electron main process and bridge (storage, file picker)
+    vault.js              Desktop key storage (the only place the key is read or written)
+    android/.../SecureKeyPlugin.java   Android key storage and native requests
     app/core.js           All Resend logic, shared by desktop and Android
     app/platform.js       Platform glue for the UI
     app/app.js, app.css   The interface
@@ -30,7 +32,7 @@ For Android you need JDK 21 and the Android SDK, then `npm run apk`.
 
 - Open an issue first for anything big, so we can agree on the approach.
 - Keep each pull request to one change.
-- Run `node --check` on any JavaScript file you touched. CI does the same.
+- Run `npm test` and `node --check` on any JavaScript file you touched. CI does the same.
 - Test on the platform you changed, and mention which one in the description.
 - Do not commit keys, keystores, `local.properties`, or build output.
 

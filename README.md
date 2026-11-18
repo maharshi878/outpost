@@ -54,8 +54,10 @@ For a Play Store or signed release build, open `android/` in Android Studio and 
 ## How it works
 
 - `app/core.js` holds all Resend logic and is shared by both builds. Only the storage, key and file-picker glue differs.
-- Desktop: the Electron main process makes every request to `api.resend.com`, with the key encrypted by the OS keychain.
-- Android: Capacitor's native HTTP carries the same requests (no CORS), mail cache lives in IndexedDB, and backup to Google is disabled.
+- Desktop: the Electron main process makes every request to `api.resend.com`. The key is encrypted by the OS keychain, held only in that process, and never given to the interface. With no keyring (some Linux setups) it stays in memory and is never written to disk.
+- Android: the key is sealed by the Android Keystore and a small native plugin makes the requests, so the web layer never holds it. Mail cache lives in IndexedDB, and backup to Google is disabled.
+- Remove your key any time in Settings with one click, or erase everything. See [SECURITY.md](SECURITY.md) for exactly what is and is not protected.
+- Sending is paced for Resend's 2 requests per second, retried safely on network errors (sends carry an idempotency key, so no duplicates), and checked against your daily and monthly limits first. You can raise the limits in Settings if you are on a paid plan.
 - The UI has no network access. Remote images in messages are blocked, so there are no tracking pixels.
 - Message bodies render in a sandboxed iframe with scripts disabled.
 - Usage meters count what Resend recorded for your key (free plan: 100 a day, 3,000 a month).
