@@ -1,0 +1,22 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions: { contents: read }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - name: Syntax check
+        run: |
+          for f in main.js preload.js vault.js app/*.js; do node --check "$f"; done
+      - name: Guard the offline UI
+        run: |
+          grep -q "default-src 'none'" app/index.html
+          grep -q "connect-src 'self'" app/index.html

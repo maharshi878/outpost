@@ -333,14 +333,19 @@ function send() {
   if (!d.from) return toast('Add a From address. Open Settings to set a default.');
   if (!d.to.length) return toast('Add at least one recipient.');
   if (bad) return toast(bad + ' is not a valid address.');
-  clearTimeout(tm); hideC();
+  clearTimeout(tm); hideC(); deliver(d, false);
+}
+function deliver(d, force) {
   const t = setTimeout(async () => {
     const text = d.body + (S.settings.sig ? '\n\n-- \n' + S.settings.sig : '');
     const m = { from: d.from, to: d.to, subject: d.subject || '(no subject)', text, html: toHtml(text) };
     if (d.cc.length) m.cc = d.cc; if (d.bcc.length) m.bcc = d.bcc;
     if (d.att.length) m.attachments = d.att.map(a => ({ filename: a.filename, content: a.content }));
+    if (force) m.force = true;
     const r = await call('send', m);
-    if (r.ok) { await call('draftDel', d.id); await load(true); toast('Sent'); } else { openC(d); toast(r.error, null, 7000); }
+    if (r.ok) { await call('draftDel', d.id); await load(true); toast('Sent'); }
+    else if (r.limit) { openC(d); toast(r.error, { label: 'Send anyway', fn: () => { clearTimeout(tm); hideC(); deliver(d, true); } }, 10000); }
+    else { openC(d); toast(r.error, null, 7000); }
   }, 6000);
   toast('Sending message', { label: 'Undo', fn: () => { clearTimeout(t); openC(d); } }, 6000);
 }
@@ -352,6 +357,8 @@ function onboard() {
     go.disabled = true; go.textContent = 'Checking key';
     const r = await call('keySet', inp.value);
     if (!r.ok) { msg.textContent = r.error; go.disabled = false; go.textContent = 'Connect'; return; }
+    inp.value = '';
+    if (r.level === 'session') toast('No system keyring found, so the key stays in memory until you quit Outpost.', null, 8000);
     await load(true); if (!S.settings.addr) settings(); sync();
   } }, 'Connect');
   inp.addEventListener('keydown', e => e.key === 'Enter' && go.click());
@@ -368,16 +375,25 @@ function settings() {
   const nm = h('input', { value: S.settings.name || '', placeholder: 'Your name', autocomplete: 'off' }), ad = h('input', { value: S.settings.addr || '', placeholder: 'hello@yourdomain.com', list: 'doms', inputmode: 'email', autocomplete: 'off' });
   const sg = h('textarea', { placeholder: 'Added under every message' }, S.settings.sig || ''), dl = h('datalist', { id: 'doms' });
   call('domains').then(ds => ds.forEach(x => dl.append(h('option', { value: 'hello@' + x }))));
+  const dayL = h('input', { type: 'number', min: 1, value: S.settings.dayLimit || '', placeholder: '100 per day', inputmode: 'numeric', 'aria-label': 'Daily limit' });
+  const monL = h('input', { type: 'number', min: 1, value: S.settings.monLimit || '', placeholder: '3000 per month', inputmode: 'numeric', 'aria-label': 'Monthly limit' });
+  const vl = h('p', { class: 'vl' }, 'Checking storage');
+  call('vault').then(v => { vl.textContent = v.where ? 'Encrypted and stored in ' + v.where + '.' : v.level === 'session' ? 'No system keyring found. The key is held in memory only and is never written to disk.' : 'Stored by the system.'; vl.className = 'vl ' + (v.level === 'session' ? 'wn' : 'ok'); });
   const close = () => { d.close(); d.remove(); };
   const tb = (k, l) => h('button', { class: (S.settings.theme || '') === k ? 'on' : '', onclick: e => { S.settings.theme = k; call('settings', { theme: k }); applyTheme(); e.currentTarget.parentNode.querySelectorAll('button').forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); } }, l);
   const d = h('dialog', { class: 'dlg' }, h('h2', { class: 'serif' }, 'Settings'),
     h('label', {}, 'Display name'), nm, h('label', {}, 'Send from (verified domain in Resend)'), ad, dl, h('label', {}, 'Signature'), sg,
     h('label', {}, 'Appearance'), h('div', { class: 'seg' }, tb('', 'System'), tb('dark', 'Dark'), tb('light', 'Light')),
-    h('label', {}, 'Free plan usage'), usage(),
+    h('label', {}, 'Sending limits (Resend free plan is 100 a day, 3,000 a month)'), h('div', { class: 'row3' }, dayL, monL),
+    h('label', {}, 'Usage'), usage(),
+    h('div', { class: 'sec' }, h('h3', { class: 'serif' }, 'Your key'), vl,
+      h('ul', { class: 'facts' }, h('li', {}, 'Only Outpost can read it. The interface never receives it.'), h('li', {}, 'It is only ever sent to api.resend.com.'), h('li', {}, 'No analytics, no telemetry, no cloud backup.')),
+      h('div', { class: 'row2', style: 'margin-top:14px' },
+        h('button', { class: 'pill alt bad', onclick: async () => { await call('keyDel'); close(); S.sel = null; S.reading = false; await load(true); toast('API key removed from this device'); } }, ico('trash', false, 18), 'Remove key'),
+        h('button', { class: 'pill alt bad', title: 'Removes the key, all cached mail and drafts', onclick: async () => { if (confirm('Remove the API key and erase all mail stored on this device?')) { await call('signout'); close(); S.sel = null; S.reading = false; await load(true); toast('Everything erased'); } } }, 'Erase everything'))),
     h('div', { class: 'row2' },
-      h('button', { class: 'pill', onclick: async () => { await call('settings', { name: nm.value.trim(), addr: ad.value.trim(), sig: sg.value }); await load(true); close(); } }, 'Save'),
-      h('button', { class: 'pill alt', onclick: close }, 'Cancel'), h('span', { class: 'sp' }),
-      h('button', { class: 'ib danger', title: 'Sign out and erase data', 'aria-label': 'Sign out and erase data', onclick: async () => { if (confirm('Remove the API key and erase all mail stored on this device?')) { await call('signout'); S.sel = null; S.reading = false; await load(true); close(); } } }, ico('trash'))));
+      h('button', { class: 'pill', onclick: async () => { await call('settings', { name: nm.value.trim(), addr: ad.value.trim(), sig: sg.value, dayLimit: Math.max(0, parseInt(dayL.value, 10) || 0) || null, monLimit: Math.max(0, parseInt(monL.value, 10) || 0) || null }); await load(true); close(); } }, 'Save'),
+      h('button', { class: 'pill alt', onclick: close }, 'Cancel')));
   document.body.append(d); d.showModal();
 }
 

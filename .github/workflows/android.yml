@@ -1,36 +1,26 @@
 name: android
-
 on:
+  push: { tags: ['v*'] }
   workflow_dispatch: {}
-  push:
-    tags: ['v*']
-
+permissions: { contents: write }
 jobs:
   apk:
     runs-on: ubuntu-latest
-
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-
+    env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1' }
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
+        with: { node-version: 22, cache: npm }
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - run: npm install
-
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci
       - run: npx cap sync android
-
       - run: chmod +x android/gradlew && cd android && ./gradlew assembleDebug
-
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk outpost-debug.apk
       - uses: actions/upload-artifact@v4
+        with: { name: outpost-apk, path: outpost-debug.apk }
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: outpost-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          generate_release_notes: true
+          files: outpost-debug.apk
