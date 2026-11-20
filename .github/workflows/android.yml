@@ -19,7 +19,7 @@ jobs:
       - run: cp android/app/build/outputs/apk/debug/app-debug.apk outpost-debug.apk
       - uses: actions/upload-artifact@v4
         with: { name: outpost-apk, path: outpost-debug.apk }
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           generate_release_notes: true
